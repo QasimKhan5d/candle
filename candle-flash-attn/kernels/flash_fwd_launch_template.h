@@ -184,7 +184,15 @@ void run_mha_fwd_hdim64(Flash_fwd_params &params, cudaStream_t stream) {
             // Using 8 warps is 18% slower for seqlen=2k, 2 warps is 5% slower
             // Using block size (64 x 256) is 27% slower for seqlen=2k
             // Using block size (256 x 64) is 85% slower for seqlen=2k, because of register spilling
-            run_flash_fwd<Flash_fwd_kernel_traits<Headdim, 128, 128, 4, false, false, T>, Is_dropout, Is_causal>(params, stream);
+            //
+            // FlashNomic-style embeddings frequently run with small seqlen (e.g. 128) and small b*h,
+            // which can underfill large GPUs (e.g. A10G). In that regime, prefer a smaller blockM
+            // and fewer warps to increase total CTAs and reduce per-CTA resource usage.
+            if (params.seqlen_q <= 256 && params.seqlen_k <= 256) {
+                run_flash_fwd<Flash_fwd_kernel_traits<Headdim, 32, 128, 2, false, false, T>, Is_dropout, Is_causal>(params, stream);
+            } else {
+                run_flash_fwd<Flash_fwd_kernel_traits<Headdim, 128, 128, 4, false, false, T>, Is_dropout, Is_causal>(params, stream);
+            }
             // run_flash_fwd<Flash_fwd_kernel_traits<Headdim, 128, 64, 4, true, false, T>, Is_dropout, Is_causal>(params, stream);
             // run_flash_fwd<Flash_fwd_kernel_traits<Headdim, 128, 64, 4, true, true, T>, Is_dropout, Is_causal>(params, stream);
         } else {
